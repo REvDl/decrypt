@@ -1,0 +1,25 @@
+# IDE
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+langs.md
+stats.md
+
+.env
+.env.local
+
+automation_tool/github_themes/stats_combine.md
+automation_tool/github_themes/stats_theme.md
+automation_tool/github_themes/streak.md
+build/

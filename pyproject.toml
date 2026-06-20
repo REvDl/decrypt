@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "decrypt"
+version = "1.1.4"
+description = "AI-powered CLI tool that connects natural language with developer workflows"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "google-genai",
+    "pydantic-settings",
+    "tenacity"
+]
+
+[project.scripts]
+decrypt = "decrypt.main:main"
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["decrypt*"]
