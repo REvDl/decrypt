@@ -15,6 +15,10 @@ AI-powered CLI tool that connects natural language with developer workflows:
 Powered by Google Gemini API.
 
 ---
+## New in v1.1.5
+- **Streaming Output** - AI responses now print in real-time as they generate
+- **Commit Diff Preview** - Shows `git diff --stat --cached` before confirming commit
+
 ## New in v1.1.4
 - **Self-Healing** - Failed commands are automatically corrected by AI
 - **Dry-Run Mode** - Test commands safely with `--dry-run`
