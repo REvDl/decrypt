@@ -101,7 +101,7 @@ def is_retryable_error(exception):
     reraise=True,
 )
 def _retry_request(client, model, contents, config):
-    return client.models.generate_content(
+    return client.models.generate_content_stream(
         model=model, contents=contents, config=config
     )
 PROMPTS = {
@@ -153,7 +153,7 @@ PROMPTS = {
         "Return ONLY the corrected text, without comments or formatting."
     )
 }
-def decode_response(client: genai.Client, short_text:str, mode:str, target_lang: str):
+def decode_response(client: genai.Client, short_text: str, mode: str, target_lang: str):
     models_pool = ["gemini-2.5-flash-lite", "gemini-2.5-flash"]
     system_instruction = PROMPTS[mode]
     if mode == "slang":
@@ -167,30 +167,34 @@ def decode_response(client: genai.Client, short_text:str, mode:str, target_lang:
     )
     for current_model in models_pool:
         try:
-            response = _retry_request(
-                client=client,
-                model=current_model,
-                contents=short_text,
-                config=config,
-            )
-            if response and response.text:
-                return response.text.strip()
-            return short_text
+            response = _retry_request(client=client, model=current_model, contents=short_text, config=config)
+            for chunk in response:
+                if chunk.text:
+                    yield chunk.text
+            return
         except APIError as e:
             is_critical = getattr(e, "code", None) in [429, 503] or "429" in str(e) or "503" in str(e)
-
             if current_model == models_pool[-1] or not is_critical:
                 if getattr(e, "code", None) == 429 or "429" in str(e):
-                    return "\n\033[31m[Exhaustion Limit] Google has limited requests. Please wait 30-60 seconds.\033[0m"
-                return f"\033[31mGemini API Error (Status {e.code}): {e.message}\033[0m"
-
-            print(f"\033[33m[Fallback] {current_model} failed (Status {e.code}). Switching to backup model...\033[0m")
-            continue
-
+                    yield "\n\033[31m[Exhaustion Limit] Google has limited requests. Please wait 30-60 seconds.\033[0m"
+                else:
+                    yield f"\n\033[31mGemini API Error (Status {e.code}): {e.message}\033[0m"
+                return
+            print(f"\n\033[33m[Fallback] {current_model} failed (Status {e.code}). Switching to backup model...\033[0m")
         except Exception as e:
             if current_model == models_pool[-1]:
-                return f"Unexpected error: {e}"
-            continue
+                yield f"\nUnexpected error: {e}"
+                return
+
+def collect_stream(gen) -> str:
+    """Assembles the generator in the form, along with the printed chunk"""
+    parts = []
+    for chunk in gen:
+        print(chunk, end="", flush=True)
+        parts.append(chunk)
+    print()
+    return "".join(parts)
+
 
 
 def get_git_diff():
@@ -284,7 +288,8 @@ def execute_command_prompt(
             f"Error:\n{error_msg}\n\n"
             f"Generate a corrected {'PowerShell' if mode == 'shell' else 'Bash'} command."
         )
-        corrected_result = decode_response(client, error_report, mode, target_lang)
+        corrected_chunks = decode_response(client, error_report, mode, target_lang)
+        corrected_result = collect_stream(corrected_chunks)
         if corrected_result and corrected_result.strip().startswith("\033[31m"):
             print(corrected_result)
             return
@@ -326,16 +331,18 @@ def process_commit(message: str, auto=False):
 
 
 
-def handle_result(result: str, mode: str, client, original_text: str, target_lang: str, auto=False, dry_run=False) -> None:
-    if result.startswith("\033[31m"):
-        print(result)
+def handle_result(result, mode: str, client, original_text: str, target_lang: str, auto=False, dry_run=False) -> None:
+    collected = collect_stream(result)
+    if collected.startswith("\033[31m"):
         return
+
     if dry_run:
-        print(f"\n{GREEN}{BOLD}[Dry-Run] Generated command/result:{RST}\n{result}")
+        print(f"\n{GREEN}{BOLD}[Dry-Run] Generated command/result:{RST}\n{collected}")
         return
+
     if mode in ["shell", "bash"]:
         execute_command_prompt(
-            command=result,
+            command=collected,
             mode=mode,
             client=client,
             user_text=original_text,
@@ -343,9 +350,7 @@ def handle_result(result: str, mode: str, client, original_text: str, target_lan
             auto=auto
         )
     elif mode == "commit":
-        process_commit(result, auto)
-    else:
-        print(f"\033[92m{result}\033[0m")
+        process_commit(collected, auto)
 
 
 def setup_config():
