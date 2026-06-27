@@ -303,6 +303,12 @@ def execute_command_prompt(
 
 def process_commit(message: str, auto=False):
     print(f"\n{BOLD}Generated commit:{RST}\n{message}")
+    try:
+        print(f"\n{DIM}Staged files status:{RST}")
+        subprocess.run(["git", "diff", "--stat", "--cached"], check=True)
+        print()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
     if not auto:
         confirm = input("Run 'git commit -m \"...\"'? [Y/n] ").strip().lower()
         if confirm not in ["y", "yes"]:
