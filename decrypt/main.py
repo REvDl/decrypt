@@ -220,7 +220,7 @@ BANNER = f"""{GREEN}{BOLD}
  ██████╔╝███████╗╚██████╗██║  ██║   ██║   ██║        ██║   
  ╚═════╝ ╚══════╝ ╚═════╝╚═╝  ╚═╝   ╚═╝   ╚═╝        ╚═╝   {RST}
   {DIM}AI-powered CLI tool: Conventional Commits · Shell Commands · Slang Decoder{RST}
-  {DIM}v1.1.5 Author: github.com/REvDl{RST}
+  {DIM}v1.1.6 Author: github.com/REvDl{RST}
 """
 
 
