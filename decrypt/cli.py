@@ -1,12 +1,6 @@
 import argparse
 import os
 
-from .ai import decode_response
-from .config import setup_config
-from .launcher import execute_command_prompt, get_git_diff, process_commit
-from .ui import BANNER, collect_stream
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -80,6 +74,7 @@ def validate_args(args) -> None:
 
 
 def handle_result(result, mode: str, client, original_text: str, target_lang: str, auto=False, dry_run=False) -> None:
+    from .ui import collect_stream
     collected = collect_stream(result)
     if collected.startswith("\033[31m"):
         return
@@ -90,6 +85,7 @@ def handle_result(result, mode: str, client, original_text: str, target_lang: st
         return
 
     if mode in ["shell", "bash"]:
+        from .launcher import execute_command_prompt
         execute_command_prompt(
             command=collected,
             mode=mode,
@@ -99,19 +95,24 @@ def handle_result(result, mode: str, client, original_text: str, target_lang: st
             auto=auto,
         )
     elif mode == "commit":
+        from .launcher import process_commit
         process_commit(collected, auto)
 
 
 def main():
     parser = build_parser()
     args = parser.parse_args()
+    from google import genai
+    from .ai import decode_response
+    from .config import setup_config
+    from .launcher import get_git_diff
+    from .ui import BANNER
 
     validate_args(args)
     settings = setup_config(force=args.config, exit_after_setup=not args.text)
     current_dir = os.getcwd()
     target_language = args.lang or settings.USER_LANGUAGE
 
-    from google import genai
     client = genai.Client(api_key=settings.API_KEY)
 
     mode = get_mode(args)
