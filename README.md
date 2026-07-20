@@ -11,19 +11,13 @@ AI-powered CLI tool that connects natural language with developer workflows:
 - Git commit generation (with optional auto-commit and auto-push)
 - Shell command generation (PowerShell & Linux Bash support)
 - Slang / abbreviation decoding
+- Streaming output — responses print in real time as they generate
+- Self-healing shell commands, dangerous-command blocking, and a dry-run mode for safety
 
 Powered by Google Gemini API.
 
 ---
-## New in v1.1.5
-- **Streaming Output** - AI responses now print in real-time as they generate
-- **Commit Diff Preview** - Shows `git diff --stat --cached` before confirming commit
 
-## New in v1.1.4
-- **Self-Healing** - Failed commands are automatically corrected by AI
-- **Dry-Run Mode** - Test commands safely with `--dry-run`
-- **Dangerous Command Blocking** - Protection against rm -rf, fork bombs, etc.
-- **30s Timeout** - Commands can't hang indefinitely
 ## Features
 
 ### 1. Commit Generator (default mode)
@@ -31,7 +25,8 @@ Generates Conventional Commit messages from:
 - staged git diff (`git diff --staged`)
 - or manual input text
 
-Prompts to run `git commit` and `git push`.
+Shows a `git diff --stat --cached` preview before asking for confirmation, then prompts to run `git commit` and `git push`.
+
 ```bash
 # From staged diff
 git add .
@@ -57,6 +52,11 @@ decrypt -s "find all png files larger than 10MB and delete them"
 decrypt -b "kill all processes on port 3000"
 ```
 
+Built-in safety guards:
+- **Self-healing** — a failed command is automatically re-generated and corrected by the AI
+- **Dangerous command blocking** — protection against `rm -rf`, fork bombs, and similar
+- **30s timeout** — commands can't hang indefinitely
+
 ---
 
 ### 3. Slang Decoder
@@ -66,7 +66,7 @@ Expands internet slang, abbreviations, and vowel-less text into readable text.
 decrypt -sl "hru btw idk"
 ```
 
---- 
+---
 
 ### 4. Interactive Mode
 Run without input arguments to start a loop:
@@ -76,9 +76,10 @@ decrypt
 ```
 
 ---
-### Dry-Run Mode (--dry-run)
 
+### 5. Dry-Run Mode (`--dry-run`)
 Only generates output, never executes anything.
+
 ```bash
 decrypt --dry-run -s "delete all node_modules folders"
 decrypt --dry-run -c "add caching layer for api"
