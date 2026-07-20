@@ -70,18 +70,20 @@ def validate_args(args) -> None:
         raise SystemExit("Only one mode allowed at a time")
 
     if args.auto and args.dry_run:
-        print("Warning: --auto is ignored in --dry-run mode")
+        from . import ui
+        ui.warning("Warning: --auto is ignored in --dry-run mode")
 
 
 def handle_result(result, mode: str, client, original_text: str, target_lang: str, auto=False, dry_run=False) -> None:
-    from .ui import collect_stream
-    collected = collect_stream(result)
-    if collected.startswith("\033[31m"):
+    from . import ui
+    collected = ui.collect_stream(result)
+    if collected.startswith(ui.RED):
         return
 
     if dry_run:
-        from .ui import GREEN, BOLD, RST
-        print(f"\n{GREEN}{BOLD}[Dry-Run] Generated command/result:{RST}\n{collected}")
+        print()
+        ui.heading("[Dry-Run] Generated command/result:")
+        print(collected)
         return
 
     if mode in ["shell", "bash"]:
@@ -106,7 +108,7 @@ def main():
     from .ai import decode_response
     from .config import setup_config
     from .launcher import get_git_diff
-    from .ui import BANNER
+    from . import ui
 
     validate_args(args)
     settings = setup_config(force=args.config, exit_after_setup=not args.text)
@@ -120,7 +122,7 @@ def main():
     dry_run = bool(args.dry_run)
 
     if args.dry_run and args.commit:
-        print("Warning: dry-run does not affect git commit mode fully")
+        ui.warning("Warning: dry-run does not affect git commit mode fully")
 
     diff = None
     if args.text or (mode == "commit" and (diff := get_git_diff())):
@@ -132,15 +134,15 @@ def main():
         handle_result(result, mode, client, args.text or "", target_language, auto, dry_run)
         return
 
-    print(BANNER)
+    ui.banner()
     if mode == "commit":
-        print("\033[33m[Git Notice] No staged changes found. Starting interactive mode...\033[0m")
+        ui.warning("[Git Notice] No staged changes found. Starting interactive mode...")
     try:
         import readline
     except ImportError:
         pass
 
-    print(f"Interactive mode ({mode.upper()}). Language: {target_language}. Path {current_dir}. Type 'exit' to quit.")
+    ui.dim(f"Interactive mode ({mode.upper()}). Language: {target_language}. Path {current_dir}. Type 'exit' to quit.")
     while True:
         try:
             user_text = input(f"[{mode.upper()}] > ")
