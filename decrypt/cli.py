@@ -3,6 +3,7 @@ import os
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="decrypt",
         description=(
             "AI-powered CLI tool\n"
             "• Conventional Commits\n"
@@ -11,25 +12,18 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+
+    # Основной позиционный аргумент
     parser.add_argument(
         "text", nargs="?", type=str,
         help="Optional text input. Commit mode (default): if empty, uses git diff; if provided, generates commit from this description."
     )
+
+    # Режимы работы (Modes) с четкими короткими флагами
     parser.add_argument(
-        "--lang",
-        type=str,
-        default=None,
-        help="Transcription language (default from .env)",
-    )
-    parser.add_argument(
-        "--config",
+        "-cm", "--commit",
         action="store_true",
-        help="Force re-configure API key and language"
-    )
-    parser.add_argument(
-        "-sl", "--slang",
-        action="store_true",
-        help="Mode: Accurately expand and decipher internet abbreviations and slang",
+        help="Mode: Generate Git commit message from text or staged diffs (default)"
     )
     parser.add_argument(
         "-s", "--shell",
@@ -42,20 +36,37 @@ def build_parser() -> argparse.ArgumentParser:
         help="Mode: Generate an executable Linux Bash command from natural language"
     )
     parser.add_argument(
-        "-c", "--commit",
+        "-sl", "--slang",
         action="store_true",
-        help="Mode: Generate Git commit message from text or staged diffs (default)"
+        help="Mode: Accurately expand and decipher internet abbreviations and slang",
     )
-    parser.add_argument(
+
+    # Группа конфигурации и управления поведением CLI (Options)
+    options_group = parser.add_argument_group("")
+
+    options_group.add_argument(
+        "-c", "--config",
+        action="store_true",
+        help="Force re-configure API key and language"
+    )
+    options_group.add_argument(
+        "-l", "--lang",
+        type=str,
+        default=None,
+        metavar="LANG",
+        help="Transcription language (default from .env)",
+    )
+    options_group.add_argument(
         "-dr", "--dry-run",
         action="store_true",
         help="Mode: generating commands without executing them"
     )
-    parser.add_argument(
+    options_group.add_argument(
         "-a", "--auto",
         action="store_true",
         help="Auto-execute mode (skips confirmation prompts)"
     )
+
     return parser
 
 
