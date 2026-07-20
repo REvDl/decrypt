@@ -111,8 +111,8 @@ pipx install decrypt
 
 ### Local development install
 ```bash
-git clone https://github.com/REvDl/Scripts.git
-cd Scripts/automation_tool/DecrypMessage
+git clone https://github.com/REvDl/decrypt.git
+cd decrypt
 pip install .
 ```
 
