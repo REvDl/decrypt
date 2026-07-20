@@ -123,7 +123,7 @@ decrypt --config
 ## CLI Usage
 
 ```
-usage: decrypt.exe [-h] [--lang LANG] [--config] [-sl] [-s] [-b] [-c] [-dr] [-a] [text]
+usage: decrypt [-h] [-cm] [-s] [-b] [-sl] [-c] [-l LANG] [-dr] [-a] [text]
 
 AI-powered CLI tool
 • Conventional Commits
@@ -131,18 +131,19 @@ AI-powered CLI tool
 • Slang Decoder
 
 positional arguments:
-  text            Optional text input. Commit mode (default): if empty, uses git diff; if provided, generates commit from this description.
+  text                  Optional text input. Commit mode (default): if empty, uses git diff; if provided, generates commit from this description.
 
 options:
-  -h, --help      show this help message and exit
-  --lang LANG     Transcription language (default from .env)
-  --config        Force re-configure API key and language
-  -sl, --slang    Mode: Accurately expand and decipher internet abbreviations and slang
-  -s, --shell     Mode: Generate an executable shell command from natural language
-  -b, --bash      Mode: Generate an executable Linux Bash command from natural language
-  -c, --commit    Mode: Generate Git commit message from text or staged diffs (default)
-  -dr, --dry-run  Mode: generating commands without executing them
-  -a, --auto      Auto-execute mode (skips confirmation prompts)
+  -h, --help            show this help message and exit
+  -cm, --commit         Mode: Generate Git commit message from text or staged diffs (default)
+  -s, --shell           Mode: Generate an executable shell command from natural language
+  -b, --bash            Mode: Generate an executable Linux Bash command from natural language
+  -sl, --slang          Mode: Accurately expand and decipher internet abbreviations and slang
+
+  -c, --config          Force re-configure API key and language
+  -l, --lang LANG       Transcription language (default from .env)
+  -dr, --dry-run        Mode: generating commands without executing them
+  -a, --auto            Auto-execute mode (skips confirmation prompts)
 ```
 
 ---
