@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-decrypt = "decrypt.main:main"
+decrypt = "decrypt.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["decrypt*"]
