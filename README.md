@@ -18,6 +18,16 @@ Powered by Google Gemini API.
 
 ---
 
+## Why
+
+Writing a commit message, or figuring out the right shell command, usually means breaking flow: open a browser tab or a separate AI chat, copy-paste context back and forth, then come back to the terminal to actually run something. `decrypt` skips that round-trip — it works right where you already are.
+
+For commits specifically: it shows a `git diff --stat --cached` preview so you can see exactly what's changing, then commits and pushes in one go if it looks right. No extra window, no copy-pasting a diff into a chat.
+
+(The slang decoder is the odd one out — it's the original joke feature this tool started as. Kept it around as a nod to where `decrypt` came from.)
+
+---
+
 ## Features
 
 ### 1. Commit Generator (default mode)
@@ -85,17 +95,23 @@ decrypt --dry-run -s "delete all node_modules folders"
 decrypt --dry-run -c "add caching layer for api"
 ```
 
+---
+
 ## Installation
 
 ### From PyPI
+```bash
 pip install decrypt
+```
 
 ### Using pipx
+```bash
 pipx install decrypt
+```
 
 ### Local development install
 ```bash
-git clone [https://github.com/REvDl/Scripts.git](https://github.com/REvDl/Scripts.git)
+git clone https://github.com/REvDl/Scripts.git
 cd Scripts/automation_tool/DecrypMessage
 pip install .
 ```
@@ -155,3 +171,22 @@ options:
 - Tenacity (with model fallback handling)
 - Pydantic Settings
 - argparse
+
+## Project structure
+
+```
+decrypt/
+├── decrypt/
+│   ├── __init__.py
+│   ├── __main__.py       # python -m decrypt
+│   ├── ai.py               # Gemini API calls, streaming, model fallback
+│   ├── cli.py             # argparse, entry point
+│   ├── config.py          # read/write .env config, first-run setup
+│   ├── launcher.py        # command execution, self-healing, safety checks
+│   └── ui.py               # shared terminal styling (colors, banner)
+├── pyproject.toml
+├── LICENSE
+├── requirements.txt
+├── .env.example
+└── README.md
+```
