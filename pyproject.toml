@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "decrypt"
-version = "1.1.8"
+version = "1.1.9"
 description = "AI-powered CLI tool that connects natural language with developer workflows"
 license = {text = "GPL-3.0-or-later"}
 classifiers = [
@@ -17,7 +17,11 @@ dependencies = [
     "pydantic-settings",
     "tenacity"
 ]
-
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-mock",
+]
 [project.scripts]
 decrypt = "decrypt.cli:main"
 [tool.setuptools.packages.find]
