@@ -54,7 +54,11 @@ def execute_command_prompt(
     print(clean_command)
 
     if not auto:
-        confirm = input("Execute command? [Y/n] ").strip().lower()
+        try:
+            confirm = input("Execute command? [Y/n] ").strip().lower()
+        except KeyboardInterrupt:
+            ui.warning("Operation cancelled.")
+            return
         if confirm not in ["y", "yes"]:
             ui.dim("Executing canceled.")
             return
@@ -119,19 +123,41 @@ def process_commit(message: str, auto: bool = False):
         pass
 
     if not auto:
-        confirm = input("Run 'git commit -m \"...\"'? [Y/n] ").strip().lower()
+        try:
+            confirm = input("Run 'git commit -m \"...\"'? [Y/n] ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            ui.warning("Commit cancelled by user.")
+            return
+
         if confirm not in ["y", "yes"]:
             ui.dim("Commit canceled.")
             return
 
     ui.success("Executing: git commit...")
-    subprocess.run(["git", "commit", "-m", message], check=True)
+    try:
+        subprocess.run(["git", "commit", "-m", message], check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        ui.error(f"Failed to execute git commit: {e}")
+        return
 
     if not auto:
-        confirm_push = input("Run 'git push'? [Y/n] ").strip().lower()
+        try:
+            confirm_push = input("Run 'git push'? [Y/n] ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            ui.warning("Push cancelled by user.")
+            return
+
         if confirm_push not in ["y", "yes"]:
             ui.dim("Push canceled.")
             return
+
+    ui.success("Executing: git push...")
+    try:
+        subprocess.run(["git", "push"], check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        ui.error(f"Failed to execute git push: {e}")
 
     ui.success("Executing: git push...")
     subprocess.run(["git", "push"], check=True)
