@@ -13,13 +13,13 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    # Основной позиционный аргумент
+    # The main positional argument
     parser.add_argument(
         "text", nargs="?", type=str,
         help="Optional text input. Commit mode (default): if empty, uses git diff; if provided, generates commit from this description."
     )
 
-    # Режимы работы (Modes) с четкими короткими флагами
+    # Operating modes (Modes) with clear short flags
     parser.add_argument(
         "-cm", "--commit",
         action="store_true",
@@ -41,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Mode: Accurately expand and decipher internet abbreviations and slang",
     )
 
-    # Группа конфигурации и управления поведением CLI (Options)
+    # CLI Configuration and Behavior Control Group (Options)
     options_group = parser.add_argument_group("")
 
     options_group.add_argument(
