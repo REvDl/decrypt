@@ -1,4 +1,5 @@
 import webbrowser
+from getpass import getpass
 from pathlib import Path
 
 from google import genai
@@ -16,88 +17,91 @@ VALIDATION_MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash"]
 
 
 class Settings(BaseSettings):
-	API_KEY: str | None = None
-	USER_LANGUAGE: str | None = "English"
-	model_config = SettingsConfigDict(
-		env_file=CONFIG_DIR / ".env",
-		env_file_encoding="utf-8",
-		extra="ignore",
-	)
+    API_KEY: str | None = None
+    USER_LANGUAGE: str | None = "English"
+    model_config = SettingsConfigDict(
+        env_file=CONFIG_DIR / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 def validate_api_key(api_key: str) -> bool:
-	if not api_key:
-		return False
-	client = genai.Client(api_key=api_key)
-	for model in VALIDATION_MODELS:
-		try:
-			client.models.generate_content(model=model, contents="ping")
-			return True
-		except APIError:
-			continue
-		except Exception:
-			continue
-	return False
+    if not api_key:
+        return False
+    client = genai.Client(api_key=api_key)
+    for model in VALIDATION_MODELS:
+        try:
+            client.models.generate_content(model=model, contents="ping")
+            return True
+        except APIError:
+            continue
+        except Exception:
+            continue
+    return False
 
 
 def prompt_for_api_key() -> str:
-	while True:
-		ui.warning("\nNo valid Gemini API key found. Choose an option:")
-		ui.dim("  1) Enter API key manually")
-		ui.dim("  2) Open Google AI Studio and get one")
-		ui.dim("  3) Exit")
-		choice = input("Select an option [1/2/3]: ").strip()
+    while True:
+        ui.warning("\nNo valid Gemini API key found. Choose an option:")
+        ui.dim("  1) Enter API key manually")
+        ui.dim("  2) Open Google AI Studio and get one")
+        ui.dim("  3) Exit")
+        choice = input("Select an option [1/2/3]: ").strip()
 
-		if choice == "3":
-			raise SystemExit(0)
+        if choice == "3":
+            raise SystemExit(0)
 
-		if choice == "2":
-			webbrowser.open(API_KEY_URL)
-			ui.dim("A browser window should open. Create a key, copy it, then paste it below.")
-			api_key = input("Paste your API key: ").strip()
-		else:
-			api_key = input("Enter your Gemini API Key: ").strip()
+        if choice == "2":
+            webbrowser.open(API_KEY_URL)
+            ui.dim("A browser window should open. Create a key, copy it, then paste it below.")
+            api_key = getpass("Paste your API key (input hidden): ").strip()
+        else:
+            api_key = getpass("Enter your Gemini API Key (input hidden): ").strip()
 
-		if not api_key:
-			ui.error("Empty input, try again.")
-			continue
+        if not api_key:
+            ui.error("Empty input, try again.")
+            continue
 
-		ui.dim("Validating API key...")
-		if validate_api_key(api_key):
-			ui.success("API key is valid.")
-			return api_key
+        ui.dim("Validating API key...")
+        if validate_api_key(api_key):
+            ui.success("API key is valid.")
+            return api_key
 
-		ui.error("Invalid API key or request failed.")
+        ui.error("Invalid API key or request failed.")
 
 
 def write_env(api_key: str, lang: str) -> None:
-	env_file = CONFIG_DIR / ".env"
-	env_file.write_text(f"API_KEY={api_key}\nUSER_LANGUAGE={lang}\n", encoding="utf-8")
+    env_file = CONFIG_DIR / ".env"
+    env_file.write_text(f"API_KEY={api_key}\nUSER_LANGUAGE={lang}\n", encoding="utf-8")
 
 
 def setup_config(force: bool = False, exit_after_setup: bool = False) -> Settings:
-	"""
+    """
+    Loads settings from CONFIG_DIR/.env.
+    If the file is missing, the key is invalid, or `force` is True, runs
+    interactive setup (with google ai studio choice and validation) first.
     force: re-run configuration even if .env already exists (--config flag).
     exit_after_setup: exit(0) right after saving, without loading Settings
                        (used when user only wants to reconfigure, with no text/mode to run).
     """
-	env_file = CONFIG_DIR / ".env"
+    env_file = CONFIG_DIR / ".env"
 
-	if not env_file.exists() or force:
-		ui.dim(f"Creating config file at {env_file}")
-		api_key = prompt_for_api_key()
-		lang = input("Enter default language: ").strip() or "English"
-		write_env(api_key, lang)
-		if force and exit_after_setup:
-			ui.success("Configuration updated successfully!")
-			exit(0)
+    if not env_file.exists() or force:
+        ui.dim(f"Creating config file at {env_file}")
+        api_key = prompt_for_api_key()
+        lang = input("Enter default language: ").strip() or "English"
+        write_env(api_key, lang)
+        if force and exit_after_setup:
+            ui.success("Configuration updated successfully!")
+            exit(0)
 
-	settings = Settings()
+    settings = Settings()
 
-	if not settings.API_KEY or not validate_api_key(settings.API_KEY):
-		api_key = prompt_for_api_key()
-		lang = settings.USER_LANGUAGE or "English"
-		write_env(api_key, lang)
-		settings = Settings()
+    if not settings.API_KEY or not validate_api_key(settings.API_KEY):
+        api_key = prompt_for_api_key()
+        lang = settings.USER_LANGUAGE or "English"
+        write_env(api_key, lang)
+        settings = Settings()
 
-	return settings
+    return settings
