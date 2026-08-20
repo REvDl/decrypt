@@ -1,4 +1,12 @@
 from . import __version__
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    message=r".*Direct use of automatic function calling \(AFC\).*",
+    category=UserWarning,
+)
+
 
 GREEN = "\033[92m"
 RED = "\033[31m"
