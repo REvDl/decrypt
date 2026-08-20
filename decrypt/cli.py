@@ -1,5 +1,14 @@
 import argparse
 import os
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    message=r".*Direct use of automatic function calling \(AFC\).*",
+    category=UserWarning,
+)
+
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(

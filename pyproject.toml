@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "decrypt"
-version = "1.2.2"
+version = "1.2.3"
 description = "AI-powered CLI tool that connects natural language with developer workflows"
 license = {text = "GPL-3.0-or-later"}
 classifiers = [
