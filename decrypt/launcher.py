@@ -14,17 +14,19 @@ DANGEROUS_PATTERNS = [
 ]
 
 
-def get_git_diff():
+def get_git_diff() -> str:
     try:
         result = subprocess.run(
             ["git", "diff", "--staged"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=True,
         )
         return result.stdout.strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return None
+    except (subprocess.CalledProcessError, FileNotFoundError, UnicodeDecodeError):
+        return ""
 
 
 def execute_command_prompt(
