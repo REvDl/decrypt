@@ -51,6 +51,11 @@ decrypt --auto
 
 ---
 
+> [!WARNING]
+> `decrypt` generates and executes shell commands via LLM. Commands are
+> restricted to an allowlist, but this is **not a full sandbox** — always
+> review commands before confirming, especially in `auto` mode.
+
 ### 2. Shell Command Generator
 Convert natural language into executable terminal commands. Supports both PowerShell and Bash.
 
