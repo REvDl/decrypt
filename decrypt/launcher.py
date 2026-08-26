@@ -3,16 +3,42 @@ import subprocess
 
 from .ai import decode_response
 from . import ui
+import shlex
+import os
 
-DANGEROUS_PATTERNS = [
-    r'rm\s+-rf\s+/?',
-    r':\(\)\s*\{\s*:\|\:&\s*\};:',
-    r'shutdown', r'reboot', r'init\s+0',
-    r'dd\s+if=/dev/zero', r'mkfs',
-    r'>\s*/dev/sda', r'curl.*\|.*sh',
-    r'wget.*\|.*sh',
-]
+ALLOWED_BINARIES = {
+    # base
+    "ls", "dir", "cat", "type", "grep", "findstr", "find", "echo", "pwd", "cd",
+    "mkdir", "cp", "copy", "mv", "move", "touch", "head", "tail", "wc", "sort",
+    # dev
+    "git", "npm", "npx", "pip", "python", "python3", "node", "docker",
+}
 
+
+BLOCKED_KEYWORDS = {
+    "sudo", "runas", "rm", "del", "rd", "rmdir", "format", "shutdown",
+    "reboot", "diskpart", "mkfs", "dd",
+}
+
+
+def is_command_safe(cmd: str) -> tuple[bool, str]:
+    parts = re.split(r'[;&|]+', cmd)
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            tokens = shlex.split(part, posix=False)
+        except ValueError:
+            return False, "Failed to parse the command"
+        if not tokens:
+            continue
+        binname = os.path.basename(tokens[0]).lower().replace(".exe", "")
+        if binname in BLOCKED_KEYWORDS:
+            return False, f"Prohibited command: {binname}"
+        if binname not in ALLOWED_BINARIES:
+            return False, f"Command outside allowlist: {binname}"
+    return True, ""
 
 def get_git_diff() -> str:
     try:
@@ -43,10 +69,12 @@ def execute_command_prompt(
     clean_command = re.sub(r'\n```$', '', clean_command)
     clean_command = clean_command.strip()
 
-    for pattern in DANGEROUS_PATTERNS:
-        if re.search(pattern, clean_command):
-            ui.error(f"Blocked dangerous command pattern: {pattern}")
-            return
+
+    is_safe, reason = is_command_safe(clean_command)
+    if not is_safe:
+        ui.error(f"Blocked: {reason}")
+        return
+
 
     executable = "powershell" if mode == "shell" else "bash"
     flag = "-Command" if mode == "shell" else "-c"
@@ -55,7 +83,7 @@ def execute_command_prompt(
     ui.heading(f"Generated command (Attempt {attempt}/{max_attempts}):")
     print(clean_command)
 
-    if not auto:
+    if not auto or attempt > 1:
         try:
             confirm = input("Execute command? [Y/n] ").strip().lower()
         except KeyboardInterrupt:
