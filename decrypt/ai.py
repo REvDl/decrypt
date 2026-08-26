@@ -76,10 +76,8 @@ def is_retryable_error(exception) -> bool:
     retry=retry_if_exception(is_retryable_error),
     reraise=True,
 )
-def _retry_request(client, model, contents, config):
-    return client.models.generate_content_stream(
-        model=model, contents=contents, config=config
-    )
+def _retry_request(chat, short_text):
+    return chat.send_message_stream(short_text)
 
 
 def decode_response(client: genai.Client, short_text: str, mode: str, target_lang: str):
@@ -96,7 +94,8 @@ def decode_response(client: genai.Client, short_text: str, mode: str, target_lan
     )
     for current_model in models_pool:
         try:
-            response = _retry_request(client=client, model=current_model, contents=short_text, config=config)
+            chat = client.chats.create(model=current_model, config=config)
+            response = _retry_request(chat=chat, short_text=short_text)
             for chunk in response:
                 if chunk.text:
                     yield chunk.text
