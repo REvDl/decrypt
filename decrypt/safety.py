@@ -1,3 +1,12 @@
+"""
+safety.py — Three-tier safety evaluation system.
+
+Levels:
+    SAFE        (0) — read-only / navigation, runs immediately or with [Y/n]
+    SUSPICIOUS  (1) — mutates state / executes code, requires explicit 'YES'
+    CRITICAL    (2) — potentially destructive, hard-blocked with no bypass
+"""
+
 from __future__ import annotations
 
 import re
@@ -109,6 +118,24 @@ CRITICAL_PATTERNS: list[CriticalPattern] = [
         re.compile(r"\brd\s+(/s\s+/q|/q\s+/s)\s+[a-zA-Z]:\\?\s*$", re.IGNORECASE),
         "rd /s /q on a drive root",
     ),
+    CriticalPattern(
+        re.compile(
+            r"\b(remove-item|ri|rmdir|rd|rm|del)\b[^;&|]*"
+            r"(?:-recurse|-r\b|-rf\b|-fr\b|/s\b)[^;&|]*"
+            r"(?:[a-zA-Z]:[\\/]?\*?\s*(?:[;&|]|$)|(?<![\w.])/(?:\*)?\s*(?:[;&|]|$)|\$home\b|~\s*(?:[;&|]|$))",
+            re.IGNORECASE,
+        ),
+        "recursive force-delete targeting a drive root/home/wildcard (flags-then-target)",
+    ),
+    CriticalPattern(
+        re.compile(
+            r"\b(remove-item|ri|rmdir|rd|rm|del)\b[^;&|]*"
+            r"(?:[a-zA-Z]:[\\/]?\*?\s+|(?<![\w.])/(?:\*)?\s+|\$home\b\s+|~\s+)[^;&|]*"
+            r"(?:-recurse|-r\b|-rf\b|-fr\b|/s\b)",
+            re.IGNORECASE,
+        ),
+        "recursive force-delete targeting a drive root/home/wildcard (target-then-flags)",
+    ),
     # del /f /s /q C:\*
     CriticalPattern(
         re.compile(r"\bdel\s+(/f\s+/s\s+/q|/s\s+/f\s+/q)\s+[a-zA-Z]:\\", re.IGNORECASE),
@@ -129,6 +156,16 @@ CRITICAL_PATTERNS: list[CriticalPattern] = [
         re.compile(r":\s*\(\s*\)\s*\{[^}]*:\s*\|\s*:.*\}\s*;\s*:"),
         "fork bomb",
     ),
+    # classic PowerShell download-and-execute cradle:
+    # IEX (New-Object Net.WebClient).DownloadString('http://...')
+    CriticalPattern(
+        re.compile(
+            r"(?:iex|invoke-expression)[^;&|]*(?:downloadstring|downloadfile)"
+            r"|(?:downloadstring|downloadfile)[^;&|]*(?:iex|invoke-expression)",
+            re.IGNORECASE,
+        ),
+        "download-and-execute cradle (DownloadString/File piped into IEX)",
+    ),
     # chmod -R 777 /  (opens up permissions on the root filesystem)
     CriticalPattern(
         re.compile(r"\bchmod\s+-R\s+[0-7]{3,4}\s+/\s*(?:[;&|]|$)"),
@@ -145,6 +182,20 @@ SUSPICIOUS_PATTERNS: list[CriticalPattern] = [
     CriticalPattern(
         re.compile(r"curl[^\n|]*\|\s*(?:bash|sh|python3?)\b"),
         "curl | bash — executing an arbitrary remote script",
+    ),
+    CriticalPattern(
+        re.compile(r"while\s*\(\s*\$true\s*\)", re.IGNORECASE),
+        "infinite loop (while($true))",
+    ),
+    CriticalPattern(
+        re.compile(r"start-process\s+powershell", re.IGNORECASE),
+        "spawns a new PowerShell process",
+    ),
+    # Downloading remote content is not destructive by itself (no execution
+    # implied) — escalated to CRITICAL only when piped into IEX, see above.
+    CriticalPattern(
+        re.compile(r"downloadstring|downloadfile", re.IGNORECASE),
+        ".NET WebClient download (verify what it's used for)",
     ),
 ]
 
@@ -205,6 +256,31 @@ def _dequote(token: str) -> str:
     if len(token) >= 2 and token[0] == token[-1] and token[0] in ("'", '"'):
         return token[1:-1]
     return token
+
+
+def _decode_powershell_b64(payload: str) -> Optional[str]:
+    """
+    PowerShell's -EncodedCommand expects a Base64 string that decodes to
+    UTF-16LE plaintext (that's what `[Convert]::ToBase64String` produces
+    from a .NET string). Returns None if the payload isn't valid Base64 or
+    doesn't decode to plausible text, so callers can fail-safe on it.
+    """
+    import base64
+
+    payload = payload.strip()
+    if not payload or len(payload) < 8:
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9+/]+=*", payload):
+        return None
+    padded = payload + "=" * (-len(payload) % 4)
+    try:
+        raw = base64.b64decode(padded, validate=True)
+        return raw.decode("utf-16-le")
+    except Exception:
+        try:
+            return base64.b64decode(padded, validate=True).decode("utf-8")
+        except Exception:
+            return None
 
 
 
@@ -289,10 +365,11 @@ def evaluate_command_safety(
         return worst_level, worst_reason, highlighted
 
     if _depth < 2:
+        eval_flags = ("-c", "-command", "/c", "--eval") if mode == "shell" else ("-c", "--eval")
         for seg in split_logical_segments(cmd):
             toks = tokenize_segment(seg)
             for i, tok in enumerate(toks[:-1]):
-                if tok.lower() in ("-c", "-command", "/c", "-e", "--eval"):
+                if tok.lower() in eval_flags:
                     inner = _dequote(toks[i + 1])
                     if inner.strip():
                         inner_level, inner_reason, _ = evaluate_command_safety(
@@ -303,6 +380,28 @@ def evaluate_command_safety(
                                 inner_level,
                                 f"Inside inline script ({tok}): {inner_reason}",
                             )
+
+
+    if _depth < 2 and mode == "shell":
+        for seg in split_logical_segments(cmd):
+            toks = tokenize_segment(seg)
+            for i, tok in enumerate(toks[:-1]):
+                if tok.lower() in ("-encodedcommand", "-enc", "-e"):
+                    b64_payload = _dequote(toks[i + 1])
+                    decoded = _decode_powershell_b64(b64_payload)
+                    if decoded:
+                        inner_level, inner_reason, _ = evaluate_command_safety(
+                            decoded, mode=mode, _depth=_depth + 1
+                        )
+                        _bump(
+                            max(inner_level, SafetyLevel.SUSPICIOUS),
+                            f"Decoded -EncodedCommand payload: {inner_reason or 'base64-obfuscated command (always at least SUSPICIOUS)'}",
+                        )
+                    else:
+                        _bump(
+                            SafetyLevel.SUSPICIOUS,
+                            "Unreadable -EncodedCommand payload (possibly malformed or truncated Base64)",
+                        )
 
     if worst_level == SafetyLevel.CRITICAL:
         return worst_level, worst_reason, highlighted
