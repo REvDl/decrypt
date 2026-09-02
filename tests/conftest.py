@@ -1,5 +1,5 @@
 import pytest
-
+from unittest.mock import patch, MagicMock
 
 @pytest.fixture()
 def fake_config_dir(tmp_path, monkeypatch):
@@ -23,3 +23,11 @@ def fake_api_key(monkeypatch):
 @pytest.fixture(autouse=True)
 def isolated_env(fake_config_dir, fake_api_key):
     pass
+
+
+@pytest.fixture
+def mock_client():
+	client = MagicMock()
+	mock_chat = MagicMock()
+	client.chats.create.return_value = mock_chat
+	return client
