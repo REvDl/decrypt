@@ -48,6 +48,7 @@ POSIX_SUSPICIOUS = {
     "kill", "killall", "systemctl", "service", "crontab", "sed", "awk",
     "sudo", "runas",  # privilege escalation -> handled strictly below
     "rm", "eval", "exec", "source",
+    "shutdown", "reboot", "poweroff", "halt",
 }
 
 # PowerShell — cmdlet names are case-insensitive, so compare in lower()
@@ -58,6 +59,7 @@ PS_SAFE = {
     "echo", "select-string", "sls", "get-history", "clear-host", "cls",
     "get-command", "gcm", "get-help", "get-module", "get-service",
     "test-path", "resolve-path", "get-acl", "pwd",
+    "get-disk", "get-volume", "get-partition", "get-psdrive",
 }
 PS_SUSPICIOUS = {
     "invoke-restmethod", "irm", "invoke-webrequest", "iwr",
@@ -66,6 +68,7 @@ PS_SUSPICIOUS = {
     "invoke-expression", "iex", "invoke-command", "icm",
     "set-executionpolicy", "stop-process", "stop-service",
     "start-service", "new-object", "start-job",
+    "restart-computer", "stop-computer",
 }
 
 # CMD.exe
@@ -170,6 +173,13 @@ CRITICAL_PATTERNS: list[CriticalPattern] = [
     CriticalPattern(
         re.compile(r"\bchmod\s+-R\s+[0-7]{3,4}\s+/\s*(?:[;&|]|$)"),
         "chmod -R on the root filesystem",
+    ),
+    CriticalPattern(
+        re.compile(
+            r"\b(?:clear|format|initialize|reset|wipe|remove)-(?:disk|volume|partition)s?\b",
+            re.IGNORECASE,
+        ),
+        "PowerShell disk/volume/partition destructive cmdlet",
     ),
 ]
 
@@ -305,6 +315,8 @@ def _classify_segment(segment: str, mode: str) -> tuple[SafetyLevel, str]:
 
     if binname in ALWAYS_CRITICAL_BINARIES:
         return SafetyLevel.CRITICAL, f"Destructive utility: {binname}"
+    if binname.startswith("mkfs"):
+        return SafetyLevel.CRITICAL, f"Destructive utility: {binname}"
     if binname in PRIVILEGE_ESCALATION:
         return SafetyLevel.CRITICAL, f"Privilege escalation attempt: {binname}"
 
@@ -380,7 +392,6 @@ def evaluate_command_safety(
                                 inner_level,
                                 f"Inside inline script ({tok}): {inner_reason}",
                             )
-
 
     if _depth < 2 and mode == "shell":
         for seg in split_logical_segments(cmd):
