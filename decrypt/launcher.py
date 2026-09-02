@@ -3,42 +3,8 @@ import subprocess
 
 from .ai import decode_response
 from . import ui
-import shlex
-import os
+from .safety import evaluate_command_safety, SafetyLevel
 
-ALLOWED_BINARIES = {
-    # base
-    "ls", "dir", "cat", "type", "grep", "findstr", "find", "echo", "pwd", "cd",
-    "mkdir", "cp", "copy", "mv", "move", "touch", "head", "tail", "wc", "sort",
-    # dev
-    "git", "npm", "npx", "pip", "python", "python3", "node", "docker",
-}
-
-
-BLOCKED_KEYWORDS = {
-    "sudo", "runas", "rm", "del", "rd", "rmdir", "format", "shutdown",
-    "reboot", "diskpart", "mkfs", "dd",
-}
-
-
-def is_command_safe(cmd: str) -> tuple[bool, str]:
-    parts = re.split(r'[;&|]+', cmd)
-    for part in parts:
-        part = part.strip()
-        if not part:
-            continue
-        try:
-            tokens = shlex.split(part, posix=False)
-        except ValueError:
-            return False, "Failed to parse the command"
-        if not tokens:
-            continue
-        binname = os.path.basename(tokens[0]).lower().replace(".exe", "")
-        if binname in BLOCKED_KEYWORDS:
-            return False, f"Prohibited command: {binname}"
-        if binname not in ALLOWED_BINARIES:
-            return False, f"Command outside allowlist: {binname}"
-    return True, ""
 
 def get_git_diff() -> str:
     try:
@@ -55,6 +21,47 @@ def get_git_diff() -> str:
         return ""
 
 
+def confirm_by_safety_level(level: SafetyLevel, reason: str, highlighted_cmd: str) -> bool:
+    """
+    Returns True if the command may be executed.
+    UX per level:
+      SAFE       -> runs immediately or with a plain [Y/n]
+      SUSPICIOUS -> bright banner + highlighted token + mandatory 'YES' input
+      CRITICAL   -> hard block, no way to bypass
+    """
+    if level == SafetyLevel.CRITICAL:
+        ui.error("=" * 60)
+        ui.error("  BLOCKED: a potentially destructive command was detected")
+        ui.error(f"  Reason: {reason}")
+        ui.error(f"  Command: {highlighted_cmd}")
+        ui.error("  Execution is not possible. Edit the command manually")
+        ui.error("  if this action is genuinely required.")
+        ui.error("=" * 60)
+        return False
+
+    if level == SafetyLevel.SUSPICIOUS:
+        print()
+        ui.warning("⚠ WARNING: this command mutates the system / executes code")
+        ui.warning(f"  Reason: {reason}")
+        print(f"  Command: {highlighted_cmd}")
+        try:
+            confirm = input("  Type 'YES' (uppercase) to confirm: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            ui.warning("Cancelled by user.")
+            return False
+        return confirm == "YES"
+
+    # SAFE
+    try:
+        confirm = input(f"Run: {highlighted_cmd} ? [Y/n] ").strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        print()
+        ui.warning("Cancelled by user.")
+        return False
+    return confirm in ("", "y", "yes")
+
+
 def execute_command_prompt(
         command: str,
         mode: str,
@@ -69,29 +76,27 @@ def execute_command_prompt(
     clean_command = re.sub(r'\n```$', '', clean_command)
     clean_command = clean_command.strip()
 
+    safety_mode = "shell" if mode == "shell" else "bash"
+    level, reason, highlighted = evaluate_command_safety(clean_command, mode=safety_mode)
 
-    is_safe, reason = is_command_safe(clean_command)
-    if not is_safe:
-        ui.error(f"Blocked: {reason}")
+    print()
+    ui.heading(f"Generated command (Attempt {attempt}/{max_attempts}) [{level.name}]:")
+    print(highlighted)
+
+    if level == SafetyLevel.CRITICAL:
+        confirm_by_safety_level(level, reason, highlighted)
         return
 
+    # --auto skips confirmation ONLY for SAFE commands.
+    # SUSPICIOUS always requires an explicit 'YES', even with --auto,
+    # otherwise --auto would become carte blanche for destructive actions.
+    if level == SafetyLevel.SUSPICIOUS or not auto or attempt > 1:
+        if not confirm_by_safety_level(level, reason, highlighted):
+            ui.dim("Executing canceled.")
+            return
 
     executable = "powershell" if mode == "shell" else "bash"
     flag = "-Command" if mode == "shell" else "-c"
-
-    print()
-    ui.heading(f"Generated command (Attempt {attempt}/{max_attempts}):")
-    print(clean_command)
-
-    if not auto or attempt > 1:
-        try:
-            confirm = input("Execute command? [Y/n] ").strip().lower()
-        except KeyboardInterrupt:
-            ui.warning("Operation cancelled.")
-            return
-        if confirm not in ["y", "yes"]:
-            ui.dim("Executing canceled.")
-            return
 
     try:
         result = subprocess.run(
@@ -128,6 +133,9 @@ def execute_command_prompt(
             print(corrected_result)
             return
 
+        # Recursive call re-runs evaluate_command_safety() on the corrected
+        # command too — self-healing cannot be used to sneak past the
+        # safety tiers, each generated attempt is re-classified from scratch.
         execute_command_prompt(
             command=corrected_result,
             mode=mode,
@@ -188,6 +196,3 @@ def process_commit(message: str, auto: bool = False):
         subprocess.run(["git", "push"], check=True)
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         ui.error(f"Failed to execute git push: {e}")
-
-    ui.success("Executing: git push...")
-    subprocess.run(["git", "push"], check=True)
