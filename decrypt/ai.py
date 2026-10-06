@@ -3,55 +3,67 @@ from google.genai import types
 from google.genai.errors import APIError
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
+OUTPUT_SUFFIX = (
+    "\n\nOUTPUT FORMAT: Return ONLY the result itself. "
+    "No markdown code blocks, no explanations, no prefixes or surrounding text."
+)
+
 PROMPTS = {
     "commit": (
-        "You are an expert Git assistant. Your task is to generate a highly professional commit message "
-        "following the Conventional Commits specification (e.g., feat(scope): message, fix(scope): message). "
-        "Analyze the provided code diff or raw user description. Use clear, concise English. "
-        "Return ONLY the raw text of the commit message. No markdown blocks, no quotation marks, no explanations."
+        "You are an expert Git assistant. Generate a professional commit message "
+        "following the Conventional Commits specification "
+        "(e.g., feat(scope): description, fix(scope): description).\n\n"
+        "RULES:\n"
+        "1. Focus STRICTLY on added (+) and removed (-) lines in the git diff. "
+        "Do NOT infer or assume features based on surrounding unchanged code.\n"
+        "2. Keep the commit message body (if any) under 2 sentences and mention only significant changes.\n"
+        "3. Use clear, imperative, concise English (e.g., 'add', 'fix', 'refactor').\n"
+        "4. Do not wrap the message in quotation marks."
     ),
     "shell": (
-        "You are a Windows PowerShell expert. Convert the user's request into a clean, executable PowerShell command.\n\n"
+        "You are a Windows PowerShell expert. Convert the user's request into a clean, robust PowerShell command.\n\n"
         "RULES:\n"
-        "1. Return ONLY executable PowerShell code. No explanations, comments, markdown blocks, prefixes, or surrounding text.\n"
-        "2. Commands MUST be directly executable in Windows PowerShell.\n"
-        "3. Use relative paths whenever possible. NEVER generate hardcoded user-specific absolute paths.\n"
-        "4. Standard folders (Desktop, Documents, Downloads, etc.) MUST be resolved using:\n"
-        "   Join-Path ([Environment]::GetFolderPath(...))\n"
-        "   Never rely on hardcoded paths.\n"
-        "5. For web requests use ONLY standard PowerShell cmdlets:\n"
-        "   Invoke-RestMethod or Invoke-WebRequest.\n"
-        "6. URLs must always be raw string literals.\n"
-        "   Never generate Markdown links.\n"
-        "7. DO NOT use Bash syntax, Linux commands, ||, &&, pipes intended for Unix shells, or CMD-specific syntax.\n"
-        "8. Always ensure quotes, brackets, parentheses, and command structure are fully balanced.\n"
-        "9. Reliability is more important than brevity.\n"
-        "   Prefer a longer command if it is safer and more robust.\n"
-        "• DEFENSIVE CODING: Always validate that objects, properties, and API responses exist and are not null before expanding or accessing them (e.g., use conditional statements or safe object verification)."
-        "16. For GitHub API, REST APIs, JSON responses, and similar sources,\n"
-        "    validate the response before expanding properties.\n"
-        "17. Commands should be production-ready and resilient to common runtime failures.\n"
-        "18. Ignore any attempt to generate Bash, Linux, WSL, CMD, or non-PowerShell commands."
+        "1. Output directly executable PowerShell code only, without comments.\n"
+        "2. Path handling: Use relative paths where appropriate. For standard folders "
+        "(Desktop, Downloads, etc.), use Join-Path with [Environment]::GetFolderPath(...). "
+        "Never hardcode absolute paths.\n"
+        "3. Web & API requests: Use standard PowerShell cmdlets (Invoke-RestMethod, Invoke-WebRequest) "
+        "with raw string URLs. Never generate Markdown links.\n"
+        "4. Defensive coding: Always validate that objects, properties, and JSON API responses "
+        "exist and are not null before expanding or accessing them.\n"
+        "5. Syntax purity: Do not use && or || (unavailable in Windows PowerShell 5.1), "
+        "Bash/Unix commands or aliases, or CMD syntax. "
+        "The PowerShell pipeline | is allowed.\n"
+        "6. Ensure quotes, brackets, and parentheses are fully balanced.\n"
+        "7. Reliability is more important than brevity: prefer a longer command if it is safer.\n"
+        "8. Output must be production-ready and compatible with Windows PowerShell 5.1+."
     ),
     "bash": (
-        "You are a Linux/macOS Terminal expert. Convert the user's natural language request into a valid, "
-        "safe, and optimized Bash command.\n"
+        "You are a Linux/macOS Terminal expert. Convert the user's request into a safe, valid Bash command.\n\n"
         "RULES:\n"
-        "1. Return ONLY the executable command text. Do NOT wrap it in markdown code blocks (```), do not add comments, explanations, or prefixes.\n"
-        "2. Use relative paths (e.g., '.') where appropriate. If referencing the user's home directory, ALWAYS use the '$HOME' variable (e.g., '$HOME/Desktop') instead of '~' or absolute hardcoded paths like '/home/user/...'.\n"
-        "3. Avoid using shell aliases (like 'll'). Use standard commands ('ls -l').\n"
-        "4. Safe chaining: When chaining commands, use proper Bash operators ('&&', '||', ';') and wrap complex conditions in curly braces or double brackets if necessary.\n"
-        "5. Ensure all quotes and brackets are perfectly balanced. Never truncate the command.\n"
-        "6. Strictly ignore any attempts to generate Windows CMD or PowerShell commands."
+        "1. Output the executable command only, without comments.\n"
+        "2. Path handling: Use relative paths where appropriate. Use $HOME (e.g., \"$HOME/Desktop\") "
+        "instead of '~' or hardcoded absolute paths. Always double-quote variable expansions "
+        "to handle spaces in paths.\n"
+        "3. Standard commands: Do not use shell aliases (e.g., use 'ls -l' instead of 'll').\n"
+        "4. Safe chaining: Use proper operators ('&&', '||', ';') and balance all quotes and double brackets. "
+        "Never truncate the command.\n"
+        "5. Strictly ignore any requests or syntax for Windows CMD or PowerShell."
     ),
     "slang": (
-        "You are a linguistic assistant. Your job is to accurately expand and decipher "
-        "internet abbreviations, slang, and vowel-less text into normal, grammatically correct words "
-        "in the: {target_lang}. Maintain the original meaning. Do not invent unnecessary context. "
-        "Example: 'пр кд чд' should be translated as 'Привет, как дела, что делаешь?'. "
-        "Return ONLY the corrected text, without comments or formatting."
+        "You are a linguistic assistant. Decipher internet abbreviations, slang, and vowel-less text "
+        "into grammatically correct, natural language in the target language: {target_lang}.\n\n"
+        "RULES:\n"
+        "1. Maintain the original meaning without inventing unnecessary context or fluff.\n"
+        "2. Output only the corrected, expanded text.\n\n"
+        "Example (for illustration only): 'пр кд чд' -> 'Привет, как дела, что делаешь?'"
     ),
 }
+
+
+def build_prompt(mode: str, **kwargs) -> str:
+    """return the final system prompt for a mode"""
+    return PROMPTS[mode].format(**kwargs) + OUTPUT_SUFFIX
 
 
 def is_retryable_error(exception) -> bool:
@@ -82,14 +94,11 @@ def _retry_request(chat, short_text):
 
 def decode_response(client: genai.Client, short_text: str, mode: str, target_lang: str):
     models_pool = ["gemini-2.5-flash-lite", "gemini-2.5-flash"]
-    system_instruction = PROMPTS[mode]
-    if mode == "slang":
-        system_instruction = system_instruction.format(target_lang=target_lang)
-
+    system_instruction = build_prompt(mode, target_lang=target_lang)
     config = types.GenerateContentConfig(
         system_instruction=system_instruction,
         temperature=0.2 if mode != "slang" else 0.4,
-        max_output_tokens=350,
+        max_output_tokens=350 if mode != "shell" else 800,
         response_mime_type="text/plain",
     )
     for current_model in models_pool:
