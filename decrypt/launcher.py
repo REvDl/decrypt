@@ -26,6 +26,7 @@ def confirm_by_safety_level(level: SafetyLevel, reason: str, highlighted_cmd: st
     Returns True if the command may be executed.
     UX per level:
       SAFE       -> runs immediately or with a plain [Y/n]
+      CAUTION    -> runs with a warning requiring explicit confirmation [y/N]
       SUSPICIOUS -> bright banner + highlighted token + mandatory 'YES' input
       CRITICAL   -> hard block, no way to bypass
     """
@@ -51,6 +52,18 @@ def confirm_by_safety_level(level: SafetyLevel, reason: str, highlighted_cmd: st
             ui.warning("Cancelled by user.")
             return False
         return confirm == "YES"
+
+    if level == SafetyLevel.CAUTION:
+        print()
+        ui.warning(f"⚠ Note: {reason}")
+        print(f"  Command: {highlighted_cmd}")
+        try:
+            confirm = input("  Run it? [y/N] ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            ui.warning("Cancelled by user.")
+            return False
+        return confirm in ("y", "yes")
 
     # SAFE
     try:
@@ -87,10 +100,10 @@ def execute_command_prompt(
         confirm_by_safety_level(level, reason, highlighted)
         return
 
-    # --auto skips confirmation ONLY for SAFE commands.
-    # SUSPICIOUS always requires an explicit 'YES', even with --auto,
-    # otherwise --auto would become carte blanche for destructive actions.
-    if level == SafetyLevel.SUSPICIOUS or not auto or attempt > 1:
+    # --auto skips confirmation ONLY for levels below CAUTION (e.g., SAFE).
+    # CAUTION always requires an explicit [y/N], and SUSPICIOUS requires 'YES',
+    # even with --auto, otherwise --auto would become carte blanche for destructi
+    if level >= SafetyLevel.CAUTION or not auto or attempt > 1:
         if not confirm_by_safety_level(level, reason, highlighted):
             ui.dim("Executing canceled.")
             return

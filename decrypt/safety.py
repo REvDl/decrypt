@@ -1,10 +1,11 @@
 """
-safety.py — Three-tier safety evaluation system.
+safety.py — Four-level safety evaluation system.
 
 Levels:
-    SAFE        (0) — read-only / navigation, runs immediately or with [Y/n]
-    SUSPICIOUS  (1) — mutates state / executes code, requires explicit 'YES'
-    CRITICAL    (2) — potentially destructive, hard-blocked with no bypass
+    SAFE        (0) — Read-only / navigation. Runs immediately or with [Y/n].
+    CAUTION     (1) — Minor changes / standard deploys. Requires explicit [y/N].
+    SUSPICIOUS  (2) — Mutates state / executes code. Requires mandatory 'YES' input.
+    CRITICAL    (3) — Destructive / dangerous. Hard-blocked with no bypass.
 """
 
 from __future__ import annotations
@@ -17,10 +18,11 @@ from typing import Optional
 
 
 class SafetyLevel(IntEnum):
+    """Safety thresholds for command execution risks and user confirmation UX."""
     SAFE = 0
-    SUSPICIOUS = 1
-    CRITICAL = 2
-
+    CAUTION = 1
+    SUSPICIOUS = 2
+    CRITICAL = 3
 
 
 # POSIX (bash/zsh) — only commands that do NOT mutate system state
@@ -30,21 +32,12 @@ POSIX_SAFE = {
     "whoami", "uname", "date", "env", "printenv", "which", "type", "df",
     "history", "tree", "basename", "dirname", "realpath", "id", "hostname",
 }
-# git subcommands that don't change anything
-GIT_SAFE_SUBCOMMANDS = {
-    "status", "log", "diff", "branch", "show", "remote", "fetch",
-    "blame", "shortlog", "describe", "rev-parse", "config", "stash",
-}
-GIT_SUSPICIOUS_SUBCOMMANDS = {
-    "push", "commit", "reset", "checkout", "merge", "rebase", "clean",
-    "cherry-pick", "revert", "tag",
-}
 
 # Mutates files / executes external code — but legitimate in a dev workflow
 POSIX_SUSPICIOUS = {
     "python", "python3", "pip", "pip3", "node", "npm", "npx",
     "docker", "docker-compose", "curl", "wget", "ssh", "scp", "rsync",
-    "chmod", "chown", "mv", "cp", "mkdir", "touch", "tar", "zip", "unzip",
+    "chmod", "chown", "mv", "tar", "zip", "unzip",
     "kill", "killall", "systemctl", "service", "crontab", "sed", "awk",
     "sudo", "runas",  # privilege escalation -> handled strictly below
     "rm", "eval", "exec", "source",
@@ -63,7 +56,7 @@ PS_SAFE = {
 }
 PS_SUSPICIOUS = {
     "invoke-restmethod", "irm", "invoke-webrequest", "iwr",
-    "start-process", "new-item", "remove-item", "ri", "copy-item",
+    "start-process", "remove-item", "ri",
     "move-item", "rename-item", "set-content", "sc", "add-content",
     "invoke-expression", "iex", "invoke-command", "icm",
     "set-executionpolicy", "stop-process", "stop-service",
@@ -71,6 +64,11 @@ PS_SUSPICIOUS = {
     "restart-computer", "stop-computer",
 }
 
+POSIX_CAUTION = {"mkdir", "touch", "cp"}
+
+PS_CAUTION = {
+    "new-item", "ni", "copy-item", "cpi", "copy", "cp", "mkdir", "md",
+}
 # CMD.exe
 CMD_SAFE = {"dir", "type", "echo", "cd", "cls", "hostname", "ver", "vol", "findstr"}
 CMD_SUSPICIOUS = {
@@ -103,6 +101,84 @@ _REDIRECT_RE = re.compile(
     re.IGNORECASE,
 )
 
+GIT_READONLY = {"status", "log", "diff", "show", "blame", "shortlog",
+                "describe", "rev-parse", "fetch"}
+_BRANCH_LIST_FLAGS = {"-a", "--all", "-r", "--remotes", "-v", "-vv", "--list",
+                      "-l", "--show-current", "--contains", "--merged", "--no-merged"}
+
+
+def _classify_git(args: list[str]) -> tuple[SafetyLevel, str]:
+    S, C, U = SafetyLevel.SAFE, SafetyLevel.CAUTION, SafetyLevel.SUSPICIOUS
+    sub, rest = args[0].lower(), args[1:]
+
+    if sub in GIT_READONLY:
+        return S, ""
+
+    if sub == "branch":
+        if any(a in {"-D", "-f", "--force", "-M", "-C"} for a in rest):
+            return U, "git branch force-delete/overwrite"
+        if any(a in {"-d", "--delete", "-m", "--move", "-c", "--copy"} for a in rest) \
+                or (rest and rest[0] not in _BRANCH_LIST_FLAGS):
+            return C, "git branch creates/changes branches"
+        return S, ""
+
+    if sub == "remote":
+        if not rest or rest[0] in {"-v", "--verbose", "show", "get-url"}:
+            return S, ""
+        return C, "git remote changes remote configuration"
+
+    if sub == "config":
+        reads = {"--get", "--get-all", "--get-regexp", "--list", "-l"}
+        if any(a in reads for a in rest) or (len(rest) == 1 and not rest[0].startswith("-")):
+            return S, ""
+        return U, "git config can define aliases/hooks that execute code"
+
+    if sub == "stash":
+        s = rest[0] if rest else "push"
+        if s in {"list", "show"}:
+            return S, ""
+        if s in {"drop", "clear"}:
+            return U, "git stash drop/clear discards saved work"
+        return C, "git stash modifies the working tree"
+
+    if sub == "tag":
+        if not rest or rest[0] in {"-l", "--list"}:
+            return S, ""
+        return C, "git tag creates/deletes tags"
+
+    if sub == "commit":
+        if "--amend" in rest:
+            return U, "git commit --amend rewrites history"
+        return C, "git commit creates a commit"
+
+    if sub in {"add", "merge", "cherry-pick", "revert"}:
+        return C, f"git {sub} changes the repo"
+
+    if sub == "switch":
+        if any(a in {"-f", "--force", "--discard-changes"} for a in rest):
+            return U, "git switch may discard uncommitted changes"
+        return C, "git switch changes the current branch"
+
+    if sub == "checkout":
+        # `git checkout x` may be a branch OR a file restore — can't tell without the FS
+        if rest and rest[0] == "-b":
+            return C, "git checkout -b creates a branch"
+        return U, "git checkout may discard uncommitted changes"
+
+    if sub == "restore":
+        if "--staged" in rest and "--worktree" not in rest and "-W" not in rest:
+            return C, "git restore --staged only touches the index"
+        return U, "git restore discards uncommitted changes"
+
+    if sub == "reset":
+        if any(a in {"--hard", "--merge", "--keep"} for a in rest):
+            return U, "git reset moves HEAD and may discard changes"
+        return C, "git reset changes HEAD/index"
+
+    if sub in {"push", "pull", "rebase", "clean"}:
+        return U, f"git {sub} mutates history/remote/working tree"
+
+    return U, f"Unknown git subcommand: {sub}"
 
 def _strip_quoted(s: str) -> str:
     """Removes quotes, only for redirect searches."""
@@ -230,7 +306,7 @@ CRITICAL_PATTERNS: list[SafetyPattern] = [
         ),
         "download-and-execute cradle (DownloadString/File piped into IEX)",
     ),
-    # chmod -R 777 /  (opens up permissions on the root filesystem)
+    # chmod -R 777 / (opens up permissions on the root filesystem)
     SafetyPattern(
         re.compile(r"\bchmod\s+-R\s+[0-7]{3,4}\s+/\s*(?:[;&|]|$)"),
         "chmod -R on the root filesystem",
@@ -387,25 +463,22 @@ def _classify_segment(segment: str, mode: str) -> tuple[SafetyLevel, str]:
         return SafetyLevel.CRITICAL, f"Privilege escalation attempt: {binname}"
 
     if binname == "git" and args:
-        sub = args[0].lower()
-        if sub in GIT_SAFE_SUBCOMMANDS:
-            return SafetyLevel.SAFE, ""
-        if sub in GIT_SUSPICIOUS_SUBCOMMANDS:
-            return SafetyLevel.SUSPICIOUS, f"git {sub} mutates the repo/history"
-        return SafetyLevel.SUSPICIOUS, f"Unknown git subcommand: {sub}"
+        return _classify_git(args)
 
-    if mode == "shell":  # PowerShell
-        safe_set, suspicious_set = PS_SAFE, PS_SUSPICIOUS
+    if mode == "shell":
+        safe_set, caution_set, suspicious_set = PS_SAFE, PS_CAUTION, PS_SUSPICIOUS
     elif mode == "cmd":
-        safe_set, suspicious_set = CMD_SAFE, CMD_SUSPICIOUS
-    else:  # bash / posix
-        safe_set, suspicious_set = POSIX_SAFE, POSIX_SUSPICIOUS
+        safe_set, caution_set, suspicious_set = CMD_SAFE, set(), CMD_SUSPICIOUS
+    else:
+        safe_set, caution_set, suspicious_set = POSIX_SAFE, POSIX_CAUTION, POSIX_SUSPICIOUS
 
     if binname in safe_set:
         bad = _dangerous_arg(binname, args)
         if bad:
             return SafetyLevel.SUSPICIOUS, f"Flag turns a 'safe' binary into a mutating one: {bad}"
         return SafetyLevel.SAFE, ""
+    if binname in caution_set:
+        return SafetyLevel.CAUTION, f"Creates or copies files: {binname}"
     if binname in suspicious_set:
         return SafetyLevel.SUSPICIOUS, f"Command mutates state / executes code: {binname}"
 
