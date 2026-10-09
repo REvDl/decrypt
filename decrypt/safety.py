@@ -318,6 +318,16 @@ CRITICAL_PATTERNS: list[SafetyPattern] = [
         ),
         "PowerShell disk/volume/partition destructive cmdlet",
     ),
+    SafetyPattern(
+        re.compile(
+            r"\b(?:remove-item|ri|rmdir|rd|del|rm)\b"
+            r"(?=[^;&|]*(?:-recurse|-r\b|-rf\b|-fr\b|/s\b))"
+            r"(?![^;&|]*-(?:filter|include|exclude)\b)"
+            r"[^;&|]*(?<=[\s'\"])(?:\.{1,2}|\*|\.{1,2}[\\/]\*?)(?=\s|$|[;&|'\")])",
+            re.IGNORECASE,
+        ),
+        "recursive delete of the current/parent directory or a bare wildcard",
+    ),
 ]
 
 SUSPICIOUS_PATTERNS: list[SafetyPattern] = [
