@@ -47,6 +47,16 @@ from decrypt.safety import evaluate_command_safety, SafetyLevel
     ("Format-Volume -DriveLetter D", "shell", SafetyLevel.CRITICAL),
     ("Clear-Disk -Number 1 -RemoveData", "shell", SafetyLevel.CRITICAL),
     ("rd /s /q C:\\", "cmd", SafetyLevel.CRITICAL),
+
+    ("Remove-Item -Path . -Recurse -Force", "shell", SafetyLevel.CRITICAL),
+    ("Remove-Item . -Recurse", "shell", SafetyLevel.CRITICAL),
+    ("ri .. -Recurse -Force", "shell", SafetyLevel.CRITICAL),
+    ("Remove-Item * -Recurse -Force", "shell", SafetyLevel.CRITICAL),
+    ("Remove-Item .\\* -Recurse -Force", "shell", SafetyLevel.CRITICAL),
+    ("Remove-Item .\\build -Recurse -Force", "shell", SafetyLevel.SUSPICIOUS),
+    ("Remove-Item ./build -Recurse", "shell", SafetyLevel.SUSPICIOUS),
+    ("Remove-Item *.log -Recurse", "shell", SafetyLevel.SUSPICIOUS),
+    ("Remove-Item . -Include *.tmp -Recurse", "shell", SafetyLevel.SUSPICIOUS),
 ])
 def test_safety_level_classification(command, mode, expected_level):
     level, _reason, _highlighted = evaluate_command_safety(command, mode=mode)
