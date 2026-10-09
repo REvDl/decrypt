@@ -151,13 +151,14 @@ def _dangerous_arg(binname: str, args: list[str]) -> Optional[str]:
 
 
 @dataclass(frozen=True)
-class CriticalPattern:
+class SafetyPattern:
+    """Regex plus a human-readable description, used for CRITICAL and SUSPICIOUS pattern lists."""
     regex: re.Pattern
     description: str
 
 
-CRITICAL_PATTERNS: list[CriticalPattern] = [
-    CriticalPattern(
+CRITICAL_PATTERNS: list[SafetyPattern] = [
+    SafetyPattern(
         re.compile(
             r"\brm\s+(?:-[a-zA-Z-]*\s+)*"
             r"(?:-[a-zA-Z]*[rR][a-zA-Z]*[fF][a-zA-Z]*|-[a-zA-Z]*[fF][a-zA-Z]*[rR][a-zA-Z]*|"
@@ -168,7 +169,7 @@ CRITICAL_PATTERNS: list[CriticalPattern] = [
         "rm with recursive force-delete of root/home/wildcard",
     ),
     # PowerShell: Remove-Item -Recurse -Force C:\  (flags in any order)
-    CriticalPattern(
+    SafetyPattern(
         re.compile(
             r"(?:remove-item|ri)\b(?=.*-recurse)(?=.*-force)"
             r".*\b([a-zA-Z]:\\?\s*$|\$env:\w+\s*$)",
@@ -177,11 +178,11 @@ CRITICAL_PATTERNS: list[CriticalPattern] = [
         "Remove-Item -Recurse -Force on a drive root",
     ),
     # rd /s /q C:\   (Windows CMD)
-    CriticalPattern(
+    SafetyPattern(
         re.compile(r"\brd\s+(/s\s+/q|/q\s+/s)\s+[a-zA-Z]:\\?\s*$", re.IGNORECASE),
         "rd /s /q on a drive root",
     ),
-    CriticalPattern(
+    SafetyPattern(
         re.compile(
             r"\b(remove-item|ri|rmdir|rd|rm|del)\b[^;&|]*"
             r"(?:-recurse|-r\b|-rf\b|-fr\b|/s\b)[^;&|]*"
@@ -190,7 +191,7 @@ CRITICAL_PATTERNS: list[CriticalPattern] = [
         ),
         "recursive force-delete targeting a drive root/home/wildcard (flags-then-target)",
     ),
-    CriticalPattern(
+    SafetyPattern(
         re.compile(
             r"\b(remove-item|ri|rmdir|rd|rm|del)\b[^;&|]*"
             r"(?:[a-zA-Z]:[\\/]?\*?\s+|(?<![\w.])/(?:\*)?\s+|\$home\b\s+|~\s+)[^;&|]*"
@@ -200,28 +201,28 @@ CRITICAL_PATTERNS: list[CriticalPattern] = [
         "recursive force-delete targeting a drive root/home/wildcard (target-then-flags)",
     ),
     # del /f /s /q C:\*
-    CriticalPattern(
+    SafetyPattern(
         re.compile(r"\bdel\s+(/f\s+/s\s+/q|/s\s+/f\s+/q)\s+[a-zA-Z]:\\", re.IGNORECASE),
         "del /f /s /q on a drive",
     ),
     # dd if=... of=/dev/sdX or /dev/nvme..
-    CriticalPattern(
+    SafetyPattern(
         re.compile(r"\bdd\b.*\bof=/dev/(sd|nvme|hd|disk)\w*", re.IGNORECASE),
         "dd writing directly to a block device",
     ),
     # redirecting output straight to a block device: >/dev/sda
-    CriticalPattern(
+    SafetyPattern(
         re.compile(r">\s*/dev/(sd|nvme|hd|disk)\w*"),
         "output redirected to a block device",
     ),
     # fork bomb :(){ :|:& };:
-    CriticalPattern(
+    SafetyPattern(
         re.compile(r":\s*\(\s*\)\s*\{[^}]*:\s*\|\s*:.*\}\s*;\s*:"),
         "fork bomb",
     ),
     # classic PowerShell download-and-execute cradle:
     # IEX (New-Object Net.WebClient).DownloadString('http://...')
-    CriticalPattern(
+    SafetyPattern(
         re.compile(
             r"(?:iex|invoke-expression)[^;&|]*(?:downloadstring|downloadfile)"
             r"|(?:downloadstring|downloadfile)[^;&|]*(?:iex|invoke-expression)",
@@ -230,11 +231,11 @@ CRITICAL_PATTERNS: list[CriticalPattern] = [
         "download-and-execute cradle (DownloadString/File piped into IEX)",
     ),
     # chmod -R 777 /  (opens up permissions on the root filesystem)
-    CriticalPattern(
+    SafetyPattern(
         re.compile(r"\bchmod\s+-R\s+[0-7]{3,4}\s+/\s*(?:[;&|]|$)"),
         "chmod -R on the root filesystem",
     ),
-    CriticalPattern(
+    SafetyPattern(
         re.compile(
             r"\b(?:clear|format|initialize|reset|wipe|remove)-(?:disk|volume|partition)s?\b",
             re.IGNORECASE,
@@ -243,27 +244,27 @@ CRITICAL_PATTERNS: list[CriticalPattern] = [
     ),
 ]
 
-SUSPICIOUS_PATTERNS: list[CriticalPattern] = [
+SUSPICIOUS_PATTERNS: list[SafetyPattern] = [
     # Invoke-Expression / IEX on downloaded content — classic download cradle
-    CriticalPattern(
+    SafetyPattern(
         re.compile(r"(?:iex|invoke-expression)\s*\(?\s*(?:irm|iwr|invoke-restmethod|invoke-webrequest)", re.IGNORECASE),
         "PowerShell download cradle (IEX on a web request result)",
     ),
-    CriticalPattern(
+    SafetyPattern(
         re.compile(r"curl[^\n|]*\|\s*(?:bash|sh|python3?)\b"),
         "curl | bash — executing an arbitrary remote script",
     ),
-    CriticalPattern(
+    SafetyPattern(
         re.compile(r"while\s*\(\s*\$true\s*\)", re.IGNORECASE),
         "infinite loop (while($true))",
     ),
-    CriticalPattern(
+    SafetyPattern(
         re.compile(r"start-process\s+powershell", re.IGNORECASE),
         "spawns a new PowerShell process",
     ),
     # Downloading remote content is not destructive by itself (no execution
     # implied) — escalated to CRITICAL only when piped into IEX, see above.
-    CriticalPattern(
+    SafetyPattern(
         re.compile(r"downloadstring|downloadfile", re.IGNORECASE),
         ".NET WebClient download (verify what it's used for)",
     ),
