@@ -90,6 +90,66 @@ ALWAYS_CRITICAL_BINARIES = {
 PRIVILEGE_ESCALATION = {"sudo", "runas", "su"}
 
 
+# "Safe" binaries that become dangerous with certain flags
+SAFE_BINARY_DANGEROUS_ARGS = {
+    "find": {"-delete", "-exec", "-execdir", "-ok", "-okdir",
+             "-fprint", "-fprintf", "-fls"},
+    "sort": {"-o", "--output"},
+    "tree": {"-o"},
+}
+
+_REDIRECT_RE = re.compile(
+    r"(?<![<>-])(?:\d*>>?|&>)(?!&)\s*(?!/dev/null\b|\$null\b|nul\b)\S",
+    re.IGNORECASE,
+)
+
+
+def _strip_quoted(s: str) -> str:
+    """Removes quotes, only for redirect searches."""
+    return re.sub(r"\"[^\"]*\"|'[^']*'", '""', s)
+
+
+def _extract_substitutions(cmd: str) -> list[str]:
+    """Extracts the bodies of $(...), <(...), >(...), and `...` (including nested parentheses)."""
+    out: list[str] = []
+    i, n = 0, len(cmd)
+    while i < n:
+        if cmd[i] == "`":
+            j = cmd.find("`", i + 1)
+            j = n if j == -1 else j
+            out.append(cmd[i + 1:j])
+            i = j + 1
+            continue
+        if cmd.startswith(("$(", "<(", ">("), i):
+            depth, j = 1, i + 2
+            while j < n and depth:
+                if cmd[j] == "(":
+                    depth += 1
+                elif cmd[j] == ")":
+                    depth -= 1
+                j += 1
+            out.append(cmd[i + 2:j - 1 if depth == 0 else j])
+            i = j
+            continue
+        i += 1
+    return out
+
+
+def _dangerous_arg(binname: str, args: list[str]) -> Optional[str]:
+    bad = SAFE_BINARY_DANGEROUS_ARGS.get(binname)
+    if binname == "env" and args:
+        return "env <command> executes arbitrary programs"
+    if not bad:
+        return None
+    for a in args:
+        al = a.lower()
+        if al in bad or any(al.startswith(b + "=") for b in bad if b.startswith("--")):
+            return f"{binname} {a}"
+        if binname == "sort" and a.startswith("-") and not a.startswith("--") and "o" in a[1:]:
+            return f"{binname} {a}"
+    return None
+
+
 @dataclass(frozen=True)
 class CriticalPattern:
     regex: re.Pattern
@@ -238,6 +298,11 @@ def split_logical_segments(cmd: str) -> list[str]:
             i += 2
             continue
 
+        if ch == "&" and (cmd[i - 1:i] in (">", "<") or cmd[i + 1:i + 2] == ">"):
+            current.append(ch)
+            i += 1
+            continue
+
         if ch in (";", "&", "|"):
             segments.append("".join(current))
             current = []
@@ -336,6 +401,9 @@ def _classify_segment(segment: str, mode: str) -> tuple[SafetyLevel, str]:
         safe_set, suspicious_set = POSIX_SAFE, POSIX_SUSPICIOUS
 
     if binname in safe_set:
+        bad = _dangerous_arg(binname, args)
+        if bad:
+            return SafetyLevel.SUSPICIOUS, f"Flag turns a 'safe' binary into a mutating one: {bad}"
         return SafetyLevel.SAFE, ""
     if binname in suspicious_set:
         return SafetyLevel.SUSPICIOUS, f"Command mutates state / executes code: {binname}"
@@ -416,7 +484,18 @@ def evaluate_command_safety(
 
     if worst_level == SafetyLevel.CRITICAL:
         return worst_level, worst_reason, highlighted
+    if _REDIRECT_RE.search(_strip_quoted(cmd)):
+        _bump(SafetyLevel.SUSPICIOUS, "Output redirection writes to a file")
 
+    subs = _extract_substitutions(cmd)
+    if subs:
+        if _depth >= 2:
+            _bump(SafetyLevel.SUSPICIOUS, "Nested command substitution (too deep to analyze)")
+        else:
+            for inner in subs:
+                lvl, why, _ = evaluate_command_safety(inner, mode=mode, _depth=_depth + 1)
+                if lvl > SafetyLevel.SAFE:
+                    _bump(lvl, f"Inside command substitution: {why}")
     for seg in split_logical_segments(cmd):
         level, reason = _classify_segment(seg, mode)
         if level > worst_level:
