@@ -67,6 +67,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Auto-execute mode (skips confirmation prompts)"
     )
+    options_group.add_argument(
+        "--short",
+        action="store_true",
+        help="Generate a short commit message (works only in commit mode)"
+    )
 
     return parser
 
@@ -84,6 +89,9 @@ def validate_args(args) -> None:
     if args.auto and args.dry_run:
         from . import ui
         ui.warning("Warning: --auto is ignored in --dry-run mode")
+
+    if args.short and get_mode(args) != "commit":
+        raise SystemExit("--short works only in commit mode")
 
 
 def handle_result(result, mode: str, client, original_text: str, target_lang: str, auto=False, dry_run=False) -> None:
@@ -132,6 +140,7 @@ def main():
     mode = get_mode(args)
     auto = bool(args.auto)
     dry_run = bool(args.dry_run)
+    short = bool(args.short)
 
     if args.dry_run and args.commit:
         ui.warning("Warning: dry-run does not affect git commit mode fully")
@@ -142,7 +151,7 @@ def main():
             input_data = f"Generate commit message for this diff:\n{diff}" if diff else f"Generate commit message this text: {args.text}"
         else:
             input_data = args.text
-        result = decode_response(client, input_data, mode, target_language)
+        result = decode_response(client, input_data, mode, target_language, short_commit=short)
         handle_result(result, mode, client, args.text or "", target_language, auto, dry_run)
         return
 
@@ -162,7 +171,7 @@ def main():
                 break
             if not user_text.strip():
                 continue
-            result = decode_response(client, user_text, mode, target_language)
+            result = decode_response(client, user_text, mode, target_language, short_commit=short)
             handle_result(result, mode, client, user_text, target_language, auto, dry_run)
         except (KeyboardInterrupt, EOFError):
             break

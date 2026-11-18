@@ -18,7 +18,8 @@ PROMPTS = {
         "Do NOT infer or assume features based on surrounding unchanged code.\n"
         "2. Keep the commit message body (if any) under 2 sentences and mention only significant changes.\n"
         "3. Use clear, imperative, concise English (e.g., 'add', 'fix', 'refactor').\n"
-        "4. Do not wrap the message in quotation marks."
+        "4. Do not wrap the message in quotation marks.\n"
+        "5. Short commit mode: {short_commit}. If True, output only the one-line subject, with no body."
     ),
     "shell": (
         "You are a Windows PowerShell expert. Convert the user's request into a clean, robust PowerShell command.\n\n"
@@ -92,9 +93,9 @@ def _retry_request(chat, short_text):
     return chat.send_message_stream(short_text)
 
 
-def decode_response(client: genai.Client, short_text: str, mode: str, target_lang: str):
+def decode_response(client: genai.Client, short_text: str, mode: str, target_lang: str, short_commit: bool = False):
     models_pool = ["gemini-2.5-flash-lite", "gemini-2.5-flash"]
-    system_instruction = build_prompt(mode, target_lang=target_lang)
+    system_instruction = build_prompt(mode, target_lang=target_lang, short_commit=short_commit)
     config = types.GenerateContentConfig(
         system_instruction=system_instruction,
         temperature=0.2 if mode != "slang" else 0.4,
