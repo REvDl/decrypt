@@ -45,11 +45,17 @@ decrypt
 # From description
 decrypt "fix auth bug in jwt middleware"
 
+# Short message: subject line only, no body
+decrypt --short
+decrypt --short "fix auth bug in jwt middleware"
+
 # Auto-execute (skips the commit and push prompts)
 decrypt --auto
 ```
 
 In this mode the model only writes the commit *message*. The `git commit` and `git push` commands are fixed in code and run without a shell, so the safety classifier below does not apply here. `--auto` skips both confirmations.
+
+`--short` makes the model return only the one-line Conventional Commit subject, without a body. It works only in commit mode (the default, or with `-cm`). Combining it with `-s`, `-b` or `-sl` exits with an error.
 
 ---
 
@@ -189,7 +195,7 @@ decrypt --config
 ## CLI Usage
 
 ```
-usage: decrypt [-h] [-cm] [-s] [-b] [-sl] [-c] [-l LANG] [-dr] [-a] [text]
+usage: decrypt [-h] [-cm] [-s] [-b] [-sl] [-c] [-l LANG] [-dr] [-a] [--short] [text]
 
 AI-powered CLI tool
 • Conventional Commits
@@ -210,6 +216,7 @@ options:
   -l, --lang LANG       Transcription language (default from .env)
   -dr, --dry-run        Mode: generating commands without executing them
   -a, --auto            Auto-execute mode (skips confirmation for SAFE commands and commit/push)
+  --short               Generate a short commit message (works only in commit mode)
 ```
 
 ---
@@ -225,6 +232,8 @@ pytest -q
 
 - `tests/unit/test_launcher_safety.py` — classification of commands into the four levels, parser robustness, and the confirmation prompts (defaults, case sensitivity, cancel behavior).
 - `tests/unit/test_launcher_execute.py` — `execute_command_prompt`: what reaches `subprocess`, how `--auto` interacts with each level, and self-healing re-classification.
+- `tests/unit/test_cli_args.py` — argument parsing and validation, including mode conflicts
+- `tests/unit/test_ai.py` — prompt building and model fallback.
 
 When a command is found to be misclassified, add it as a row in the parametrized tests first, then fix the classifier.
 
@@ -254,10 +263,10 @@ decrypt/
 │   └── ui.py             # shared terminal styling (colors, banner)
 ├── tests/
 │   └── unit/
-        ├── test_ai.py
-        ├── test_cli_args.py
-        ├── test_config.py
-        ├── test_launcher_execute.py
+│       ├── test_ai.py
+│       ├── test_cli_args.py
+│       ├── test_config.py
+│       ├── test_launcher_execute.py
 │       └── test_launcher_safety.py
 ├── pyproject.toml
 ├── LICENSE
